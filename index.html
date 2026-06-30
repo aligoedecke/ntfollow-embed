@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>NinjaTrader · Follow Expert Strategy Leaders</title>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>html,body,#root{margin:0;height:100%;background:#0a0a0a;}</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState } = React;
+
+// ── NinjaTrader brand tokens ──────────────────────────────────────────────
+const NT = {
+  orange:     "#FF4200",
+  orangeDark: "#DC3900",
+  orangeLine: "rgba(255,66,0,0.28)",
+  blue:       "#008CFF",
+  green:      "#6DD900",
+  red:        "#FF5D5D",
+  amber:      "#F0B23A",
+  white:      "#FAFAFA",
+  dim:        "rgba(255,255,255,0.55)",
+  dimmer:     "rgba(255,255,255,0.32)",
+  line:       "rgba(255,255,255,0.07)",
+};
+
+// Dashboard-specific tones tuned to match the live screenshot
+const D = {
+  sidebar: "#0a0a0a",
+  appTop:  "#242424",
+  appBot:  "#171717",
+  panel:   "#0d0d0d",
+  chip:    "#131313",
+  border:  "rgba(255,255,255,0.06)",
+};
+
+// ── Strategy data (from the C2 selector cards) ────────────────────────────
+const STRATEGIES = [
+  {
+    id: "sentinel", name: "Sentinel Pro V1", alias: "Sentinel Pro V1",
+    cumReturn: "+2242.7%", window: "9 months",
+    spark: "M0,52 L18,49 L34,46 L52,44 L66,38 L82,40 L96,33 L112,30 L128,24 L142,27 L158,20 L172,17 L188,11 L200,8",
+    stats: [
+      { label: "MAX DD", value: "(18.9%)", red: true },
+      { label: "PROFIT FACTOR", value: "3.45" },
+      { label: "SHARPE", value: "6.44" },
+      { label: "AGE", value: "9 mo" },
+    ],
+    micros: true,
+  },
+  {
+    id: "jnbd", name: "JNBD Futures", alias: "JNBD Futures",
+    cumReturn: "+45.8%", window: "8 months",
+    spark: "M0,50 L20,47 L38,48 L56,44 L74,45 L92,40 L110,41 L128,36 L146,33 L162,30 L178,22 L190,26 L200,21",
+    stats: [
+      { label: "MAX DD", value: "(9.8%)", red: true },
+      { label: "PROFIT FACTOR", value: "1.32" },
+      { label: "SHARPE", value: "1.28" },
+      { label: "AGE", value: "8 mo" },
+    ],
+    micros: false,
+  },
+];
+
+// ── Icons (inline, minimal) ───────────────────────────────────────────────
+const Ico = {
+  trading: "M3 17l5-5 3 3 7-7M3 21h18",
+  funds:   "M3 7h18v12H3zM3 7l9-4 9 4M7 12h.01",
+  news:    "M4 5h16v14H4zM7 9h10M7 13h10M7 17h6",
+  learn:   "M12 3l9 5-9 5-9-5 9-5zM5 11v5l7 4 7-4v-5",
+  support: "M12 21a9 9 0 100-18 9 9 0 000 18zM9.5 9a2.5 2.5 0 113 2.5V13M12 17h.01",
+};
+function NavIcon({ d }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d={d} />
+    </svg>
+  );
+}
+
+// ── Strategy card pieces ──────────────────────────────────────────────────
+function HypoTag() {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", padding: "3px 8px", borderRadius: 100,
+      background: "rgba(240,178,58,0.10)", border: "1px solid rgba(240,178,58,0.30)",
+      fontSize: 9, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: NT.amber, whiteSpace: "nowrap" }}>
+      Hypothetical
+    </span>
+  );
+}
+function StatChip({ label, value, red }) {
+  return (
+    <div style={{ background: D.chip, border: `1px solid ${D.border}`, borderRadius: 8, padding: "8px 8px", textAlign: "center" }}>
+      <div style={{ fontSize: 13, fontWeight: 800, color: red ? NT.red : NT.white, letterSpacing: "-0.01em" }}>{value}</div>
+      <div style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: "0.05em", color: NT.dimmer, marginTop: 3 }}>{label}</div>
+    </div>
+  );
+}
+function StrategyCard({ s, onTrade }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <div onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+      style={{ background: D.panel, border: `1px solid ${hover ? NT.orangeLine : D.border}`, borderRadius: 12, padding: 16,
+        display: "flex", flexDirection: "column", transform: hover ? "translateY(-3px)" : "none",
+        boxShadow: hover ? "0 14px 36px rgba(0,0,0,0.5)" : "none",
+        transition: "transform .18s ease, border-color .18s ease, box-shadow .18s ease" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 800, color: NT.white, letterSpacing: "-0.01em" }}>{s.name}</div>
+          <div style={{ display: "flex", gap: 6, marginTop: 7 }}>
+            <span style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: "0.05em", color: NT.dim, background: D.chip, border: `1px solid ${D.border}`, borderRadius: 4, padding: "2px 7px" }}>FUTURES</span>
+            {s.micros && <span style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: "0.05em", color: NT.blue, background: "rgba(0,140,255,0.10)", border: "1px solid rgba(0,140,255,0.28)", borderRadius: 4, padding: "2px 7px" }}>MICROS</span>}
+          </div>
+        </div>
+        <div style={{ width: 32, height: 32, borderRadius: "50%", background: "conic-gradient(from 180deg, #C9962E, #F4D77A, #C9962E)",
+          display: "flex", alignItems: "center", justifyContent: "center", fontSize: 7.5, fontWeight: 900, color: "#3a2a05", textAlign: "center", lineHeight: 1, flexShrink: 0 }}>
+          TOS<br/>100%
+        </div>
+      </div>
+
+      <div style={{ marginTop: 14, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: "0.10em", color: NT.dimmer }}>HYPOTHETICAL RESULTS</div>
+        <HypoTag />
+      </div>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 9, marginTop: 4 }}>
+        <div style={{ fontSize: 28, fontWeight: 900, color: NT.green, letterSpacing: "-0.02em" }}>{s.cumReturn}</div>
+        <div style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: "0.05em", color: NT.dimmer }}>CUMUL. RETURN</div>
+      </div>
+
+      <div style={{ position: "relative", marginTop: 11, background: "#000", border: `1px solid ${D.border}`, borderRadius: 8, padding: "10px 12px" }}>
+        <div style={{ position: "absolute", top: 8, left: 12, fontSize: 8.5, fontWeight: 700, color: NT.dim, background: D.chip, borderRadius: 4, padding: "2px 6px" }}>{s.window}</div>
+        <svg viewBox="0 0 200 56" width="100%" height="54" preserveAspectRatio="none" style={{ display: "block" }}>
+          <defs>
+            <linearGradient id={`fill-${s.id}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={NT.green} stopOpacity="0.22" />
+              <stop offset="100%" stopColor={NT.green} stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          <path d={`${s.spark} L200,56 L0,56 Z`} fill={`url(#fill-${s.id})`} />
+          <path d={s.spark} fill="none" stroke={NT.green} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 6, marginTop: 11 }}>
+        {s.stats.map((st) => <StatChip key={st.label} {...st} />)}
+      </div>
+
+      <button onClick={() => onTrade(s)}
+        style={{ marginTop: 14, width: "100%", background: hover ? NT.orangeDark : NT.orange, color: "white", border: "none",
+          padding: "11px 0", borderRadius: 4, fontSize: 13.5, fontWeight: 800, letterSpacing: "-0.01em", cursor: "pointer", transition: "background .15s ease" }}>
+        Auto-trade in my account →
+      </button>
+      <button onClick={() => onTrade(s)}
+        style={{ marginTop: 7, width: "100%", background: "transparent", color: NT.dim, border: "none", fontSize: 11.5, fontWeight: 600, cursor: "pointer", padding: "2px 0" }}>
+        View details
+      </button>
+    </div>
+  );
+}
+function ComingSoonCard() {
+  const [hover, setHover] = useState(false);
+  return (
+    <div onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+      style={{ border: `1px dashed ${hover ? NT.orangeLine : "#2b2b2b"}`, borderRadius: 12, padding: 16,
+        display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", textAlign: "center", minHeight: 320, transition: "border-color .18s ease" }}>
+      <div style={{ fontSize: 24, fontWeight: 900, color: "#3a3a3a" }}>+</div>
+      <div style={{ fontSize: 13.5, fontWeight: 800, color: NT.dim, marginTop: 6, letterSpacing: "-0.01em" }}>More strategies landing weekly</div>
+      <div style={{ fontSize: 11.5, color: NT.dimmer, marginTop: 8, lineHeight: 1.5, maxWidth: 190 }}>
+        Vetted futures leaders are being added to the roster. Trade your own edge?
+      </div>
+      <button style={{ marginTop: 14, background: "transparent", color: NT.blue, border: "1px solid rgba(0,140,255,0.4)", borderRadius: 4, padding: "9px 14px", fontSize: 11.5, fontWeight: 800, cursor: "pointer" }}>
+        Submit your track record →
+      </button>
+    </div>
+  );
+}
+
+// ── Dashboard chrome ──────────────────────────────────────────────────────
+function Pill({ label, value }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <span style={{ fontSize: 12, color: NT.dim }}>{label}</span>
+      <span style={{ fontSize: 12, fontWeight: 700, color: "#fff", background: "#2a2a2a", borderRadius: 100, padding: "5px 12px" }}>{value}</span>
+    </div>
+  );
+}
+function NavItem({ icon, label, active }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 8px", borderRadius: 8, color: active ? "#fff" : NT.dim, background: active ? "rgba(255,255,255,0.04)" : "transparent", cursor: "pointer" }}>
+      <NavIcon d={icon} /><span style={{ fontSize: 14, fontWeight: active ? 700 : 500 }}>{label}</span>
+    </div>
+  );
+}
+const PERF_STATS = [
+  { label: "Realized PnL", value: "$0.00" },
+  { label: "Average trade PnL", value: "$0.00" },
+  { label: "Winning trades percent", value: "0.00%" },
+  { label: "Drawdown", value: "$0.00" },
+  { label: "Number of trades", value: "0" },
+  { label: "Average trade time", value: "—" },
+];
+const NEWS = [
+  "AeroVironment, Rocket Lab, AST SpaceMobile, Super Micro — Stocks Are Moving After Hours",
+  "Anthony Scaramucci Once Revealed The Warren Buffett Letter That Changed His View On Markets",
+  "Crude Oil Slips As Traders Weigh Supply Outlook Into Quarter-End",
+];
+
+// ── App ───────────────────────────────────────────────────────────────────
+function NinjaTraderDashboard() {
+  const [toast, setToast] = useState(null);
+  const handleTrade = (s) => {
+    setToast(`Opening auto-trade setup for ${s.alias} — you're already logged in.`);
+    setTimeout(() => setToast(null), 3200);
+  };
+
+  return (
+    <div style={{ display: "flex", minHeight: "100vh", background: D.sidebar, color: "#fff", fontFamily: "'Figtree', system-ui, sans-serif" }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Figtree:wght@300;400;500;600;700;800;900&display=swap');
+        * { box-sizing: border-box; }
+        @keyframes slideIn { from { opacity:0; transform: translate(-50%,8px);} to {opacity:1; transform: translate(-50%,0);} }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-thumb { background:#333; border-radius: 8px; }
+      `}</style>
+
+      {/* Sidebar */}
+      <aside style={{ width: 232, background: D.sidebar, borderRight: `1px solid ${D.border}`, padding: "18px 16px", display: "flex", flexDirection: "column", flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 28 }}>
+          <span style={{ fontSize: 18, fontWeight: 900, letterSpacing: "-0.02em" }}>
+            <span style={{ color: NT.orange }}>NINJA</span><span style={{ color: "#fff" }}>TRADER</span>
+          </span>
+        </div>
+        <nav style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <NavItem icon={Ico.trading} label="Trading" active />
+          <NavItem icon={Ico.funds} label="Transfer funds" />
+          <NavItem icon={Ico.news} label="News and calendar" />
+          <NavItem icon={Ico.learn} label="Learn and practice" />
+          <NavItem icon={Ico.support} label="Support" />
+        </nav>
+        <div style={{ marginTop: "auto", paddingTop: 24 }}>
+          <div style={{ color: NT.orange, fontWeight: 900, fontSize: 16, marginBottom: 8 }}>NT</div>
+          <div style={{ fontSize: 12.5, color: NT.dim, lineHeight: 1.5, marginBottom: 12 }}>Download our award-winning desktop platform for free.</div>
+          <button style={{ width: "100%", background: NT.orange, color: "#fff", border: "none", borderRadius: 6, padding: "10px 0", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>Download</button>
+        </div>
+      </aside>
+
+      {/* Main */}
+      <main style={{ flex: 1, background: `linear-gradient(180deg, ${D.appTop} 0%, ${D.appBot} 60%)`, display: "flex", flexDirection: "column", minWidth: 0 }}>
+        {/* Top bar */}
+        <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 28px", borderBottom: `1px solid ${D.border}` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 36 }}>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 800, color: NT.orange, letterSpacing: "0.04em" }}>Live</div>
+              <div style={{ fontSize: 12, color: NT.dim }}>1000049</div>
+            </div>
+            <Pill label="Buying Power" value="USD  $0.00" />
+            <Pill label="Unrealized PnL" value="USD  $0.00" />
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <button style={{ display: "flex", alignItems: "center", gap: 8, background: "#fff", color: "#111", border: "none", borderRadius: 100, padding: "8px 16px", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
+              Trade <span style={{ color: NT.orange }}>↯</span>
+            </button>
+            <div style={{ width: 30, height: 30, borderRadius: 8, background: "#222", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>💬</div>
+            <div style={{ width: 30, height: 30, borderRadius: "50%", background: "#e6e6e6", color: "#111", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800 }}>AG</div>
+          </div>
+        </header>
+
+        {/* Scroll body */}
+        <div style={{ padding: 28, overflowY: "auto" }}>
+          {/* Performance card */}
+          <section style={{ background: D.panel, border: `1px solid ${D.border}`, borderRadius: 14, padding: 0, marginBottom: 24, overflow: "hidden" }}>
+            <div style={{ height: 240, display: "flex", alignItems: "center", justifyContent: "center", color: NT.dimmer, fontSize: 14, borderBottom: `1px solid ${D.border}` }}>No data</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)" }}>
+              {PERF_STATS.map((s, i) => (
+                <div key={s.label} style={{ padding: "16px 18px", borderLeft: i === 0 ? "none" : `1px solid ${D.border}` }}>
+                  <div style={{ fontSize: 11, color: NT.dim, marginBottom: 8 }}>{s.label}</div>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: "#fff" }}>{s.value}</div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {/* ── Follow Expert Strategy Leaders — NOW POPULATED ─────────────── */}
+          <section style={{ background: D.panel, border: `1px solid ${D.border}`, borderRadius: 14, padding: 24, marginBottom: 24 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18 }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: 24, fontWeight: 900, color: "#fff", letterSpacing: "-0.02em" }}>Follow Expert Strategy Leaders</h2>
+                <p style={{ margin: "8px 0 0", fontSize: 13.5, color: NT.dim, lineHeight: 1.55, maxWidth: 620 }}>
+                  Auto-trade live futures strategies in your account. You stay in control: pause, size down, or exit anytime.
+                </p>
+              </div>
+              <button aria-label="Dismiss" style={{ background: "transparent", border: "none", color: NT.dimmer, fontSize: 20, cursor: "pointer", lineHeight: 1, padding: 4 }}>×</button>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
+              {STRATEGIES.map((s) => <StrategyCard key={s.id} s={s} onTrade={handleTrade} />)}
+              <ComingSoonCard />
+            </div>
+
+            <p style={{ marginTop: 16, fontSize: 10.5, color: NT.dimmer, lineHeight: 1.5, maxWidth: 900 }}>
+              Hypothetical performance shown. Hypothetical results have inherent limitations and are not indicative of future results. Trading futures involves substantial risk of loss and is not suitable for all investors.
+            </p>
+          </section>
+
+          {/* News and calendar */}
+          <section style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 24 }}>
+            <div style={{ background: D.panel, border: `1px solid ${D.border}`, borderRadius: 14, padding: 22 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+                <span style={{ fontSize: 17, fontWeight: 900, color: "#fff" }}>Market news</span>
+                <span style={{ fontSize: 11, color: NT.dimmer }}>Updated 0 sec ago ↻</span>
+              </div>
+              {NEWS.map((h, i) => (
+                <div key={i} style={{ display: "flex", gap: 12, padding: "12px 0", borderTop: i === 0 ? "none" : `1px solid ${D.border}` }}>
+                  <div style={{ width: 64, height: 44, borderRadius: 6, background: "linear-gradient(135deg,#2a2a2a,#1a1a1a)", flexShrink: 0 }} />
+                  <div style={{ fontSize: 13, color: "rgba(255,255,255,0.82)", lineHeight: 1.4 }}>{h}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ background: D.panel, border: `1px solid ${D.border}`, borderRadius: 14, padding: 22 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+                <span style={{ fontSize: 17, fontWeight: 900, color: "#fff" }}>Calendar</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: NT.blue, cursor: "pointer" }}>View more ›</span>
+              </div>
+              <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                <div style={{ width: 44, height: 44, borderRadius: 8, background: D.chip, border: `1px solid ${D.border}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 800 }}>Jun</div>
+                <div style={{ fontSize: 13, color: "rgba(255,255,255,0.82)" }}>Metals &amp; Agriculture First Notice (Jul)</div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </main>
+
+      {toast && (
+        <div style={{ position: "fixed", bottom: 28, left: "50%", transform: "translateX(-50%)", background: D.panel,
+          border: `1px solid ${NT.orangeLine}`, borderLeft: `3px solid ${NT.orange}`, borderRadius: 10, padding: "14px 18px",
+          color: "#fff", fontSize: 13, fontWeight: 600, boxShadow: "0 18px 50px rgba(0,0,0,0.6)", animation: "slideIn .2s ease", maxWidth: 440 }}>
+          {toast}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+ReactDOM.createRoot(document.getElementById("root")).render(<NinjaTraderDashboard />);
+</script>
+</body>
+</html>
